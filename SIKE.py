@@ -27,6 +27,8 @@ default_opts = {'modelled_impurities': ['Li'],
                 'ksp_pc': 'bjacobi',
                 'ksp_tol': 1e-15}
 
+#TODO: Do we ever want to actually evolve all states? Or only build M_eff and get derived coefficients? Opportunity to massively simplify by removing petsc & mpi dependency
+#TODO: I guess we should only ever really be evolving the P states, so all that code is still useful, but could probably do it with dense numpy matrices rather than petsc, and probably don't need MPI!
 
 class SIKERun(object):
     """
@@ -268,6 +270,58 @@ class SIKERun(object):
                 self.opts['max_steps']), self.opts['evolve'], kinetic=False)
             del self.rate_mats_Max
 
+    def calc_eff_rate_mats(self, kinetic=False, P_states="ground"):
+        """Calculate the effective rate matrix at each spatial location, for the given P states ("metastables")
+
+        Args:
+            kinetic (bool, optional): whether to plot for kinetic or Maxwellian electrons. Defaults to False.
+            P_states (str, optional): choice of P states (i.e. metastables). Defaults to "ground", meaning ground states of all ionization stages will be treated as evolved states..
+        """
+        
+        #TODO: Add functions (probably in post_processing) to extract ionization, recombination coeffs etc from M_eff
+        
+        if kinetic:
+            fe = self.fe 
+        else:
+            fe = self.fe_Max
+        
+        eff_rate_mats = {}
+        
+        for el in self.opts["modelled_impurities"]:
+            
+            #TODO: Implement Greenland P-state validation checker
+            self.impurities[el].reorder_PQ_states(P_states)
+            
+            eff_rate_mats[el] = [None] * self.loc_num_x
+            
+            num_P = self.impurities[el].num_P_states
+            num_Q = self.impurities[el].num_Q_states
+            
+            for i in range(self.min_x, self.max_x):
+                print('{:.1f}%'.format(100 * i / self.loc_num_x), end='\r')
+                
+                # Build the local matrix
+                M = matrix_utils.fill_local_mat(self.impurities[el].transitions, 
+                                                             self.impurities[el].tot_states, fe[:,i], self.ne[i], 
+                                                             self.Te[i], self.vgrid, self.dvc)
+                
+                # Calculate M_eff
+                M_P = M[:num_P,:num_P]
+                M_Q = M[num_P+1:,num_P+1:]
+                M_PQ = M[:num_P,num_P+1:]
+                M_QP = M[num_P+1:,:num_P]
+                M_eff = -(M_P - M_PQ @ np.linalg.inv(M_Q) @ M_QP)
+                
+                eff_rate_mats[el][i - self.min_x] = M_eff
+
+            print('{:.1f}%'.format(100))
+            
+        if kinetic:
+            self.eff_rate_mats = eff_rate_mats
+        else:
+            self.eff_rate_mats_Max = eff_rate_mats_Max
+
+
     def build_matrix(self, kinetic=False):
         # Build the rate matrices
         for el in self.opts['modelled_impurities']:
@@ -275,18 +329,18 @@ class SIKERun(object):
             if kinetic:
                 if self.rank == 0:
                     print('Filling kinetic transition matrix for ' + el + '...')
-                petsc_mat = matrix_utils.build_matrix(self.loc_num_x, self.min_x, self.max_x,
+                petsc_mat = matrix_utils.build_petsc_matrix(self.loc_num_x, self.min_x, self.max_x,
                     self.impurities[el].tot_states, self.impurities[el].transitions, self.num_x, self.opts['evolve'])
-                self.rate_mats[el] = matrix_utils.fill_rate_matrix(self.loc_num_x, self.min_x, self.max_x, petsc_mat,
+                self.rate_mats[el] = matrix_utils.fill_petsc_rate_matrix(self.loc_num_x, self.min_x, self.max_x, petsc_mat,
                                                                    self.impurities[el], self.opts['evolve'], self.num_x, self.fe, self.ne, self.Te, self.vgrid, self.dvc)
             else:
                 if self.rank == 0:
                     print('Filling Maxwellian transition matrix for ' + el + '...')
-                petsc_mat = matrix_utils.build_matrix(self.loc_num_x, self.min_x, self.max_x,
+                petsc_mat = matrix_utils.build_petsc_matrix(self.loc_num_x, self.min_x, self.max_x,
                     self.impurities[el].tot_states, self.impurities[el].transitions, self.num_x, self.opts['evolve'])
-                self.rate_mats_Max[el] = matrix_utils.fill_rate_matrix(self.loc_num_x, self.min_x, self.max_x, petsc_mat,
+                self.rate_mats_Max[el] = matrix_utils.fill_petsc_rate_matrix(self.loc_num_x, self.min_x, self.max_x, petsc_mat,
                                                                        self.impurities[el], self.opts['evolve'], self.num_x, self.fe_Max, self.ne, self.Te, self.vgrid, self.dvc)
-
+    
     def compute_densities(self, dt=None, num_t=None, evolve=True, kinetic=False):
         # Solve or evolve the matrix equation to find the equilibrium densities
         if evolve:

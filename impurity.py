@@ -305,3 +305,14 @@ class Impurity:
         for i, trans in enumerate(self.transitions):
             self.transitions[i].from_pos = id2pos[self.transitions[i].from_id]
             self.transitions[i].to_pos = id2pos[self.transitions[i].to_id]
+    
+    def reorder_PQ_states(self, P_states="ground"):
+        if P_states == "ground":
+            ground_states = [s for s in self.states if s.ground is True]
+            other_states = [s for s in self.states if s.ground is False]
+            self.num_P_states = len(ground_states)
+            self.num_Q_states = len(other_states)
+            self.states = ground_states + other_states
+        
+        self.set_state_positions()
+        self.set_transition_positions()

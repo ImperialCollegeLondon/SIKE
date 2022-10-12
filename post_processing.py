@@ -212,6 +212,7 @@ def get_gs_iz_coeffs(r,el,kinetic=False):
 
 
 def get_cr_iz_coeffs(r, el, kinetic=False):
+    #TODO: Delete this function in favour of doing it the sensible way (M_eff)
     """Calculate the collisional-radiative ionization coefficients, as per Summers, P. et al. PPCF (2006)
 
     Args:

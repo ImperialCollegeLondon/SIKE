@@ -104,7 +104,7 @@ def get_loc_pos(rows, cols, row, col):
     return 0
 
 
-def build_matrix(loc_num_x, min_x, max_x, num_states, transitions, num_x, evolve):
+def build_petsc_matrix(loc_num_x, min_x, max_x, num_states, transitions, num_x, evolve):
     """Construct a petsc matrix for the problem
 
     Args:
@@ -189,8 +189,66 @@ def build_matrix(loc_num_x, min_x, max_x, num_states, transitions, num_x, evolve
 
     return rate_mat
 
+def fill_local_mat(transitions, num_states, fe, ne, Te, vgrid, dvc):
+    
+    local_mat = np.zeros([num_states, num_states])
 
-def fill_rate_matrix(loc_num_x: int, min_x: int, max_x: int, mat: PETSc.Mat, impurity: Impurity, evolve: bool, num_x: int, fe: np.ndarray, ne: np.ndarray, Te: np.ndarray, vgrid: np.ndarray, dvc: np.ndarray):
+    # Calculate the values
+    for j, trans in enumerate(transitions):
+
+        from_pos = trans.from_pos
+        to_pos = trans.to_pos
+        typ = trans.type
+
+        # # Calculate the value to be added to the matrix
+        val = trans.get_mat_value(
+            fe, vgrid, dvc)
+
+        # Add the loss term
+        row = from_pos
+        col = from_pos
+        local_mat[row,col] -= val
+
+        # Add the gain term
+        row = to_pos
+        col = from_pos
+        local_mat[row,col] += val
+
+        # Calculate inverse process matrix entries (3-body recombination & de-excitation)
+        if typ == 'excitation':
+
+            val = trans.get_mat_value_inv(
+                fe, vgrid, dvc)
+
+            # Add the loss term
+            row = to_pos
+            col = to_pos
+            local_mat[row,col] -= val
+
+            # Add the gain term
+            row = from_pos
+            col = to_pos
+            local_mat[row,col] += val
+
+        elif typ == 'ionization':
+
+            val = trans.get_mat_value_inv(
+                fe, vgrid, dvc, ne, Te)
+
+            # Add the loss term
+            row = to_pos
+            col = to_pos
+            local_mat[row,col] -= val
+
+            # Add the gain term
+            row = from_pos
+            col = to_pos
+            local_mat[row,col] += val
+    
+    return local_mat
+    
+
+def fill_petsc_rate_matrix(loc_num_x: int, min_x: int, max_x: int, mat: PETSc.Mat, impurity: Impurity, evolve: bool, num_x: int, fe: np.ndarray, ne: np.ndarray, Te: np.ndarray, vgrid: np.ndarray, dvc: np.ndarray):
     """Fill the rate matrix with rates calculated by each transition object
 
     Args:

@@ -10,6 +10,7 @@ import petsc4py
 default_opts = {'modelled_impurities': ['Li'],
                 'delta_t': 1.0e-3,
                 'evolve': True,
+                'use_petsc': True,
                 'kinetic_electrons': False,
                 'maxwellian_electrons': True,
                 'dndt_thresh': 1e-5,
@@ -68,6 +69,8 @@ class SIKERun(object):
         opts: dict
             'evolve': boolean(=True)
                 Specify whether to evolve the state density equations in time. If false, simply invert the rate matrix (this method sometimes suffers from numerical instabilities)
+            'use_petsc': boolean(=True)
+                Specify whether to use PETSc matrix solver routines. If False, numpy matrix inversion iwll be used instead
             'modelled_impurities': list(=['C'])
                 A list of the impurity species to evolve (use chemical symbols)
             'modelled_states': str(='all')
@@ -76,7 +79,7 @@ class SIKERun(object):
                 Solve rate equations for Maxwellian electrons at given density and temperatures
             'maxwellian_electrons': boolean(=True)
                 Solve rate equations for kinetic electrons with given distribution functions
-            'delta_t': float(=1.0e-6)
+            'delta_t': float(=1.0e-3)
                 The  to use in seconds if "evolve" option is true
             'dn_dt_thresh': float(=1e-5)
                 The threshold density residual between subsequent s which defines whether equilibrium has been reached
@@ -263,12 +266,12 @@ class SIKERun(object):
             self.build_matrix(kinetic=True)
             self.compute_densities(self.opts['delta_t']/self.t_norm, int(
                 self.opts['max_steps']), self.opts['evolve'], kinetic=True)
-            del self.rate_mats
+            # del self.rate_mats
         if self.opts['maxwellian_electrons']:
             self.build_matrix(kinetic=False)
             self.compute_densities(self.opts['delta_t']/self.t_norm, int(
                 self.opts['max_steps']), self.opts['evolve'], kinetic=False)
-            del self.rate_mats_Max
+            # del self.rate_mats_Max
 
     def calc_eff_rate_mats(self, kinetic=False, P_states="ground"):
         """Calculate the effective rate matrix at each spatial location, for the given P states ("metastables")
@@ -319,7 +322,7 @@ class SIKERun(object):
         if kinetic:
             self.eff_rate_mats = eff_rate_mats
         else:
-            self.eff_rate_mats_Max = eff_rate_mats_Max
+            self.eff_rate_mats_Max = eff_rate_mats
 
 
     def build_matrix(self, kinetic=False):
@@ -329,17 +332,23 @@ class SIKERun(object):
             if kinetic:
                 if self.rank == 0:
                     print('Filling kinetic transition matrix for ' + el + '...')
-                petsc_mat = matrix_utils.build_petsc_matrix(self.loc_num_x, self.min_x, self.max_x,
-                    self.impurities[el].tot_states, self.impurities[el].transitions, self.num_x, self.opts['evolve'])
-                self.rate_mats[el] = matrix_utils.fill_petsc_rate_matrix(self.loc_num_x, self.min_x, self.max_x, petsc_mat,
-                                                                   self.impurities[el], self.opts['evolve'], self.num_x, self.fe, self.ne, self.Te, self.vgrid, self.dvc)
+                if self.opts['use_petsc']:
+                    petsc_mat = matrix_utils.build_petsc_matrix(self.loc_num_x, self.min_x, self.max_x,
+                        self.impurities[el].tot_states, self.impurities[el].transitions, self.num_x, self.opts['evolve'])
+                    self.rate_mats[el] = matrix_utils.fill_petsc_rate_matrix(self.loc_num_x, self.min_x, self.max_x, petsc_mat, self.impurities[el], self.fe, self.ne, self.Te, self.vgrid, self.dvc)
+                else:
+                    np_mat = matrix_utils.build_np_matrix(self.min_x, self.max_x, self.impurities[el].tot_states)
+                    self.rate_mats[el] = matrix_utils.fill_np_rate_matrix(self.loc_num_x, self.min_x, self.max_x, np_mat, self.impurities[el], self.fe, self.ne, self.Te, self.vgrid, self.dvc)
             else:
                 if self.rank == 0:
                     print('Filling Maxwellian transition matrix for ' + el + '...')
-                petsc_mat = matrix_utils.build_petsc_matrix(self.loc_num_x, self.min_x, self.max_x,
-                    self.impurities[el].tot_states, self.impurities[el].transitions, self.num_x, self.opts['evolve'])
-                self.rate_mats_Max[el] = matrix_utils.fill_petsc_rate_matrix(self.loc_num_x, self.min_x, self.max_x, petsc_mat,
-                                                                       self.impurities[el], self.opts['evolve'], self.num_x, self.fe_Max, self.ne, self.Te, self.vgrid, self.dvc)
+                if self.opts['use_petsc']:
+                    petsc_mat = matrix_utils.build_petsc_matrix(self.loc_num_x, self.min_x, self.max_x,
+                        self.impurities[el].tot_states, self.impurities[el].transitions, self.num_x, self.opts['evolve'])
+                    self.rate_mats_Max[el] = matrix_utils.fill_petsc_rate_matrix(self.loc_num_x, self.min_x, self.max_x, petsc_mat, self.impurities[el], self.fe_Max, self.ne, self.Te, self.vgrid, self.dvc)
+                else:
+                    np_mat = matrix_utils.build_np_matrix(self.min_x, self.max_x, self.impurities[el].tot_states)
+                    self.rate_mats_Max[el] = matrix_utils.fill_np_rate_matrix(self.loc_num_x, self.min_x, self.max_x, np_mat, self.impurities[el], self.fe_Max, self.ne, self.Te, self.vgrid, self.dvc)
     
     def compute_densities(self, dt=None, num_t=None, evolve=True, kinetic=False):
         # Solve or evolve the matrix equation to find the equilibrium densities
@@ -349,10 +358,16 @@ class SIKERun(object):
                     if self.rank == 0:
                         print(
                         'Computing densities with kinetic electrons for ' + el + '...')
-                    n_solved = solver.evolve(self.loc_num_x, self.min_x, self.max_x,self.rate_mats[el], 
-                                             self.impurities[el].dens, self.num_x, dt, num_t, self.opts['dndt_thresh'],
-                                             self.n_norm, self.t_norm, self.opts['ksp_solver'], self.opts['ksp_pc'], 
-                                             self.opts['ksp_tol'])
+                    if self.opts['use_petsc']:
+                        n_solved = solver.evolve_petsc(self.loc_num_x, self.min_x, self.max_x,self.rate_mats[el], 
+                                                self.impurities[el].dens, self.num_x, dt, num_t, self.opts['dndt_thresh'],
+                                                self.n_norm, self.t_norm, self.opts['ksp_solver'], self.opts['ksp_pc'], 
+                                                self.opts['ksp_tol'])
+                    else:
+                        n_solved = solver.evolve_np(self.loc_num_x, self.min_x, self.max_x,self.rate_mats[el], 
+                                                self.impurities[el].dens, self.num_x, dt, num_t, self.opts['dndt_thresh'],
+                                                self.n_norm, self.t_norm, self.opts['ksp_solver'], self.opts['ksp_pc'], 
+                                                self.opts['ksp_tol'])
                     if n_solved is not None:
                         self.impurities[el].dens = n_solved
                         self.success = True
@@ -362,10 +377,15 @@ class SIKERun(object):
                     if self.rank == 0:
                         print(
                         'Computing densities with Maxwellian electrons for ' + el + '...')
-                    n_solved = solver.evolve(self.loc_num_x, self.min_x, self.max_x,self.rate_mats_Max[el], 
-                                             self.impurities[el].dens_Max, self.num_x, dt, num_t, 
-                                             self.opts['dndt_thresh'], self.n_norm, self.t_norm,self.opts['ksp_solver'], 
-                                             self.opts['ksp_pc'], self.opts['ksp_tol'])
+                    if self.opts['use_petsc']:
+                        n_solved = solver.evolve_petsc(self.loc_num_x, self.min_x, self.max_x,self.rate_mats_Max[el], 
+                                                self.impurities[el].dens_Max, self.num_x, dt, num_t, 
+                                                self.opts['dndt_thresh'], self.n_norm, self.t_norm,self.opts['ksp_solver'], self.opts['ksp_pc'], self.opts['ksp_tol'])
+                    else:
+                        n_solved = solver.evolve_np(self.loc_num_x, self.min_x, self.max_x,self.rate_mats_Max[el], 
+                                                self.impurities[el].dens_Max, self.num_x, dt, num_t, self.opts['dndt_thresh'],
+                                                self.n_norm, self.t_norm, self.opts['ksp_solver'], self.opts['ksp_pc'], 
+                                                self.opts['ksp_tol'])
                     if n_solved is not None:
                         self.impurities[el].dens_Max = n_solved
                         self.success = True 
@@ -379,7 +399,10 @@ class SIKERun(object):
                 if kinetic:
                     if self.rank == 0:
                         print('Computing densities with kinetic electrons for ' + el + '...')
-                    n_solved = solver.solve(self.loc_num_x, self.min_x, self.max_x, self.rate_mats[el], self.impurities[el].dens, self.num_x, self.opts['ksp_solver'], self.opts['ksp_pc'], self.opts['ksp_tol'])
+                    if self.opts['use_petsc']:
+                        n_solved = solver.solve_petsc(self.loc_num_x, self.min_x, self.max_x, self.rate_mats[el], self.impurities[el].dens, self.num_x, self.opts['ksp_solver'], self.opts['ksp_pc'], self.opts['ksp_tol'])
+                    else:
+                        n_solved = solver.solve_np(self.loc_num_x, self.min_x, self.max_x, self.rate_mats[el], self.impurities[el].dens, self.num_x, self.opts['ksp_solver'], self.opts['ksp_pc'], self.opts['ksp_tol'])
 
                     if n_solved is not None:
                         self.impurities[el].dens = n_solved
@@ -391,7 +414,10 @@ class SIKERun(object):
 
                     if self.rank == 0:
                         print('Computing densities with Maxwellian electrons for ' + el + '...')
-                    n_solved = solver.solve(self.loc_num_x, self.min_x, self.max_x, self.rate_mats_Max[el], self.impurities[el].dens_Max, self.num_x, self.opts['ksp_solver'], self.opts['ksp_pc'], self.opts['ksp_tol'])
+                    if self.opts['use_petsc']:
+                        n_solved = solver.solve_petsc(self.loc_num_x, self.min_x, self.max_x, self.rate_mats_Max[el], self.impurities[el].dens_Max, self.num_x, self.opts['ksp_solver'], self.opts['ksp_pc'], self.opts['ksp_tol'])
+                    else:
+                        n_solved = solver.solve_np(self.loc_num_x, self.min_x, self.max_x, self.rate_mats_Max[el], self.impurities[el].dens_Max, self.num_x, self.opts['ksp_solver'], self.opts['ksp_pc'], self.opts['ksp_tol'])
 
                     if n_solved is not None:
                         self.impurities[el].dens_Max = n_solved

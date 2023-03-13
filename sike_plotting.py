@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from post_processing import *
 
+
 """A number of useful plotting functions for SIKERun objects.
 """
 

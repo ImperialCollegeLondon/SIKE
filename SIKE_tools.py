@@ -1,5 +1,6 @@
 import numpy as np
 from numba import jit
+from scipy import interpolate
 
 # Define some useful constants
 el_mass = 9.10938e-31
@@ -331,3 +332,19 @@ def get_associated_transitions(state_id, from_ids, to_ids):
         if from_ids[i] == state_id or to_ids[i] == state_id:
             associated_transition_indices.append(i)
     return associated_transition_indices
+
+
+def interpolate_adf11_data(adas_file, Te, ne, num_z):
+    num_x = len(Te)
+    interp_data = np.zeros([num_x, num_z-1])
+    for z in range(num_z-1):
+        adas_file_interp = interpolate.interp2d(
+            adas_file.logNe, adas_file.logT, adas_file.data[z], kind='linear')
+        for i in range(num_x):
+            log_ne = np.log10(1e-6 * ne[i])
+            log_Te = np.log10(Te[i])
+            interp_result = adas_file_interp(log_ne, log_Te)
+            interp_data[i, z] = 1e-6 * \
+                (10 ** interp_result[0])
+
+    return interp_data

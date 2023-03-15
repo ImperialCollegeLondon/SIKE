@@ -101,9 +101,9 @@ def plot_PLTs(r, el, effective = True, kinetic = True, maxwellian = True, xaxis=
             ax.plot(x,PLT_Max[:,Z],color=l.get_color(),label=el + '$^{' + str(Z) + '+}$')
     if effective:
         if kinetic:
-            ax.plot(x,PLT_kin_eff,'--',color='black', label='Maxwellian')
+            ax.plot(x,PLT_kin_eff,'--',color='black', label='Kinetic')
         if maxwellian:
-            ax.plot(x,PLT_Max_eff,'-',color='black', label='Kinetic')
+            ax.plot(x,PLT_Max_eff,'-',color='black', label='Maxwellian')
     ax.set_yscale('log')
     ax.set_xlabel(xlabel)
     ax.set_ylabel('Excitation radiation per ion [Wm$^3$]')
@@ -228,20 +228,26 @@ def plot_cr_iz_coeffs(r,el, kinetic=True, maxwellian=True, xaxis='Te', logx=Fals
     """
     
     if maxwellian:
-        try:
-            r.rate_mats_Max[el]
-        except NameError:
-            raise AttributeError('SIKERun object has no Maxwellian rate matrix. Call SIKERun.build_matrix(kinetic=False)')
-        print('Getting Maxwellian ionization coeffs...')
-        cr_iz_coeffs_Max = get_cr_iz_coeffs(r,el,kinetic=False)
+        if hasattr(r.impurities[el], 'iz_coeffs_Max'):
+            cr_iz_coeffs_Max = r.impurities[el].iz_coeffs_Max
+        else:
+          try:
+              r.rate_mats_Max[el]
+          except NameError:
+              raise AttributeError('SIKERun object has no Maxwellian rate matrix. Call SIKERun.build_matrix(kinetic=False)')
+          print('Getting Maxwellian ionization coeffs...')
+          cr_iz_coeffs_Max = get_cr_iz_coeffs(r,el,kinetic=False)
     
     if kinetic:
-        try:
-            r.rate_mats[el]
-        except NameError:
-            raise AttributeError('SIKERun object has no kinetic rate matrix. Call SIKERun.build_matrix(kinetic=True)')
-        print('Getting kinetic ionization coeffs...')
-        cr_iz_coeffs_kin = get_cr_iz_coeffs(r,el,kinetic=True)
+        if hasattr(r.impurities[el], 'iz_coeffs'):
+            cr_iz_coeffs_kin = r.impurities[el].iz_coeffs
+        else:
+          try:
+              r.rate_mats[el]
+          except NameError:
+              raise AttributeError('SIKERun object has no kinetic rate matrix. Call SIKERun.build_matrix(kinetic=True)')
+          print('Getting kinetic ionization coeffs...')
+          cr_iz_coeffs_kin = get_cr_iz_coeffs(r,el,kinetic=True)
     
     x, xlabel = get_xaxis(r,xaxis)
     

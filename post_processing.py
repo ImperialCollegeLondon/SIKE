@@ -279,11 +279,14 @@ def get_cr_iz_coeffs(r, el, kinetic=False):
     # return cr_iz_coeffs
     
     r.calc_eff_rate_mats(kinetic=kinetic)
-    cr_iz_coeffs = np.zeros([r.num_x,r.impurities[el].num_Z-1])
+    cr_iz_coeffs = np.zeros([r.loc_num_x,r.impurities[el].num_Z-1])
     
-    for x_pos in range(r.num_x):   
+    for x_pos in range(r.min_x,r.max_x):   
         for Z in range(r.impurities[el].num_Z-1):
-          cr_iz_coeffs[x_pos,Z] = -r.eff_rate_mats_Max[el][x_pos][Z+1,Z] / (r.ne[x_pos] * r.n_norm * r.t_norm)
+          if kinetic:
+            cr_iz_coeffs[x_pos-r.min_x,Z] = -r.eff_rate_mats[el][x_pos-r.min_x][Z+1,Z] / (r.ne[x_pos] * r.n_norm * r.t_norm)
+          else:
+            cr_iz_coeffs[x_pos-r.min_x,Z] = -r.eff_rate_mats_Max[el][x_pos-r.min_x][Z+1,Z] / (r.ne[x_pos] * r.n_norm * r.t_norm)
     
     return cr_iz_coeffs
 
@@ -301,10 +304,13 @@ def get_cr_rec_coeffs(r, el, kinetic=False):
     """
     
     r.calc_eff_rate_mats(kinetic=kinetic)
-    cr_rec_coeffs = np.zeros([r.num_x,r.impurities[el].num_Z-1])
+    cr_rec_coeffs = np.zeros([r.loc_num_x,r.impurities[el].num_Z-1])
     
-    for x_pos in range(r.num_x):   
+    for x_pos in range(r.min_x,r.max_x):
         for Z in range(r.impurities[el].num_Z-1):
-          cr_rec_coeffs[x_pos,Z] = -r.eff_rate_mats_Max[el][x_pos][Z,Z+1] / (r.ne[x_pos] * r.n_norm * r.t_norm)
+          if kinetic:
+            cr_rec_coeffs[x_pos-r.min_x,Z] = -r.eff_rate_mats[el][x_pos-r.min_x][Z,Z+1] / (r.ne[x_pos] * r.n_norm * r.t_norm)
+          else:
+            cr_rec_coeffs[x_pos-r.min_x,Z] = -r.eff_rate_mats_Max[el][x_pos-r.min_x][Z,Z+1] / (r.ne[x_pos] * r.n_norm * r.t_norm)              
     
     return cr_rec_coeffs

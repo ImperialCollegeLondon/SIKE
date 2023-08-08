@@ -23,6 +23,7 @@ default_opts = {'modelled_impurities': ['Li'],
                 'emission': True,
                 'autoionization': True,
                 'fixed_fraction_init': True,
+                'saha_boltzmann_init': True,
                 'state_ids': None,
                 'ksp_solver': 'ibcgs',
                 'ksp_pc': 'bjacobi',
@@ -134,7 +135,7 @@ class SIKERun(object):
         self.impurities = {}
         for el in self.opts['modelled_impurities']:
             self.impurities[el] = Impurity(self.rank, self.num_procs,
-                el, self.opts, self.vgrid, self.Egrid, self.ne, self.collrate_const, self.tbrec_norm, self.sigma_0, self.t_norm, self.T_norm)
+                el, self.opts, self.vgrid, self.Egrid, self.ne, self.Te, self.collrate_const, self.tbrec_norm, self.sigma_0, self.t_norm, self.T_norm, self.n_norm)
         if self.rank == 0:
             print('Finished initialising impurity species objects.')
             

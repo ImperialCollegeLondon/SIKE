@@ -1,6 +1,9 @@
 import numpy as np
 import SIKE_tools
-
+import SIKE
+import os
+import json
+import copy
 
 def get_Zavg(dens, states, num_x=None):
     """Calculate average ionization
@@ -66,6 +69,8 @@ def get_cooling_curves(run, element, kinetic=True):
                 dens[:, em_trans.from_pos]
 
         cooling_curves[:, Z] /= (Z_dens[:, Z] * run.ne)
+
+        # cooling_curves[np.where(Z_dens[:,Z] < 0.0), Z] = 0.0
 
     cooling_curves *= SIKE_tools.el_charge * run.T_norm / (run.t_norm * run.n_norm)
 
@@ -314,3 +319,152 @@ def get_cr_rec_coeffs(r, el, kinetic=False):
             cr_rec_coeffs[x_pos-r.min_x,Z] = -r.eff_rate_mats_Max[el][x_pos-r.min_x][Z,Z+1] / (r.ne[x_pos] * r.n_norm * r.t_norm)              
     
     return cr_rec_coeffs
+
+def load_sikerun_from_dir(rdir,el,check_for_cr_coeffs=True):
+    """Create and return a SIKERun object from text files in a given input directory.
+
+    Args:
+        rdir (str): Directory containing SIKERun data
+        el (str): element 
+        check_for_cr_coeffs (bool, optional): whether to look for iz and rec coefficients
+
+    Returns:
+        SIKERun: SIKERun object of the given element with densities set to those in the input directory
+    """
+    with open(os.path.join(rdir,el + '_opts.json')) as f:
+      opts = json.load(f)
+    
+    if opts['kinetic_electrons'] and opts['maxwellian_electrons']:
+      with open(os.path.join(rdir,el + '_dens.txt')) as f:
+        dens = np.loadtxt(f)
+      with open(os.path.join(rdir,el + '_dens_Max.txt')) as f:
+        dens_Max = np.loadtxt(f)
+      with open(os.path.join(rdir,'fe.txt')) as f:
+        fe = np.loadtxt(f)
+      with open(os.path.join(rdir,'vgrid.txt')) as f:
+        vgrid = np.loadtxt(f)
+      r = SIKE.SIKERun(fe=fe, vgrid=vgrid, opts=opts)
+      r.impurities[el].dens = dens
+      r.impurities[el].dens_Max = dens_Max
+    
+    if opts['maxwellian_electrons'] and not opts['kinetic_electrons']:
+      with open(os.path.join(rdir,el + '_dens_Max.txt')) as f:
+        dens_Max = np.loadtxt(f)
+      with open(os.path.join(rdir,'Te.txt')) as f:
+        Te = np.loadtxt(f)
+      with open(os.path.join(rdir,'ne.txt')) as f:
+        ne = np.loadtxt(f)
+      r = SIKE.SIKERun(ne=ne, Te=Te, opts=opts)
+      r.impurities[el].dens_Max = dens_Max
+    
+    if check_for_cr_coeffs:
+      if opts['kinetic_electrons'] and opts['maxwellian_electrons']:
+        if os.path.isfile(os.path.join(rdir, el + '_iz_coeffs.txt')):
+          r.impurities[el].iz_coeffs = np.loadtxt(os.path.join(rdir, el + '_iz_coeffs.txt'))
+          r.impurities[el].iz_coeffs_Max = np.loadtxt(os.path.join(rdir, el + '_iz_coeffs_Max.txt'))
+          r.impurities[el].rec_coeffs = np.loadtxt(os.path.join(rdir, el + '_rec_coeffs.txt'))
+          r.impurities[el].rec_coeffs_Max = np.loadtxt(os.path.join(rdir, el + '_rec_coeffs_Max.txt'))
+      if opts['maxwellian_electrons'] and not opts['kinetic_electrons']:
+         if os.path.isfile(os.path.join(rdir, el + '_iz_coeffs_Max.txt')):
+          r.impurities[el].iz_coeffs_Max = np.loadtxt(os.path.join(rdir, el + '_iz_coeffs_Max.txt'))
+          r.impurities[el].rec_coeffs_Max = np.loadtxt(os.path.join(rdir, el + '_rec_coeffs_Max.txt'))
+
+    return r
+
+def update_sikerun_from_dir(r,rdir,el,check_for_cr_coeffs=True):
+    """Create and return a SIKERun object from text files in a given input directory.
+
+    Args:
+        rdir (str): Directory containing SIKERun data
+        el (str): element 
+        check_for_cr_coeffs (bool, optional): whether to look for iz and rec coefficients
+
+    Returns:
+        SIKERun: SIKERun object of the given element with densities set to those in the input directory
+    """
+    with open(os.path.join(rdir,el + '_opts.json')) as f:
+      opts = json.load(f)
+    
+    if opts['kinetic_electrons'] and opts['maxwellian_electrons']:
+      with open(os.path.join(rdir,el + '_dens.txt')) as f:
+        dens = np.loadtxt(f)
+      with open(os.path.join(rdir,el + '_dens_Max.txt')) as f:
+        dens_Max = np.loadtxt(f)
+      with open(os.path.join(rdir,'fe.txt')) as f:
+        fe = np.loadtxt(f)
+      with open(os.path.join(rdir,'vgrid.txt')) as f:
+        vgrid = np.loadtxt(f)
+      r.fe = fe 
+      r.vgrid = vgrid
+      r.init_from_dist()
+      r.impurities[el].dens = dens
+      r.impurities[el].dens_Max = dens_Max
+    
+    if opts['maxwellian_electrons'] and not opts['kinetic_electrons']:
+      with open(os.path.join(rdir,el + '_dens_Max.txt')) as f:
+        dens_Max = np.loadtxt(f)
+      with open(os.path.join(rdir,'Te.txt')) as f:
+        Te = np.loadtxt(f)
+      with open(os.path.join(rdir,'ne.txt')) as f:
+        ne = np.loadtxt(f)
+      r.ne = ne 
+      r.Te = Te 
+      r.init_from_profiles()
+      r.impurities[el].dens_Max = dens_Max
+    
+    if check_for_cr_coeffs:
+      if opts['kinetic_electrons'] and opts['maxwellian_electrons']:
+        if os.path.isfile(os.path.join(rdir, el + '_iz_coeffs.txt')):
+          r.impurities[el].iz_coeffs = np.loadtxt(os.path.join(rdir, el + '_iz_coeffs.txt'))
+          r.impurities[el].iz_coeffs_Max = np.loadtxt(os.path.join(rdir, el + '_iz_coeffs_Max.txt'))
+          r.impurities[el].rec_coeffs = np.loadtxt(os.path.join(rdir, el + '_rec_coeffs.txt'))
+          r.impurities[el].rec_coeffs_Max = np.loadtxt(os.path.join(rdir, el + '_rec_coeffs_Max.txt'))
+      if opts['maxwellian_electrons'] and not opts['kinetic_electrons']:
+         if os.path.isfile(os.path.join(rdir, el + '_iz_coeffs_Max.txt')):
+          r.impurities[el].iz_coeffs_Max = np.loadtxt(os.path.join(rdir, el + '_iz_coeffs_Max.txt'))
+          r.impurities[el].rec_coeffs_Max = np.loadtxt(os.path.join(rdir, el + '_rec_coeffs_Max.txt'))
+
+    return r
+
+def load_sikerundeck(outputdir, el, identifier='Output_', check_for_cr_coeffs=True, full_load=False):
+    """Load a rundeck of SIKERun objects from a directory of the specified element.
+
+    Args:
+        outputdir (_type_): _description_
+        el (_type_): _description_
+
+    Returns:
+        List: List of SIKERun objects
+    """
+    rdirs = [os.path.join(outputdir,d) for d in os.listdir(outputdir) if identifier in d]
+    sike_runs = []
+
+    # Load up the first run
+    r = load_sikerun_from_dir(rdirs[0],el,check_for_cr_coeffs)
+    sike_runs.append(r)
+
+    if full_load:
+
+      for rdir in rdirs[1:]:
+        r = load_sikerun_from_dir(rdir,el,check_for_cr_coeffs)
+        sike_runs.append(r)
+       
+    else:
+
+      # For remaining runs, copy and update the densities and profiles
+      for rdir in rdirs[1:]:
+          r = copy.copy(sike_runs[0])
+          if hasattr(sike_runs[0].impurities[el], 'dens'):
+            r.impurities[el].dens = copy.deepcopy(sike_runs[0].impurities[el].dens)
+          if hasattr(sike_runs[0].impurities[el], 'dens_Max'):
+            r.impurities[el].dens_Max = copy.deepcopy(sike_runs[0].impurities[el].dens_Max)
+          update_sikerun_from_dir(r,rdir,el,check_for_cr_coeffs)
+          sike_runs.append(r)
+    
+    # Sort by density
+    densities = [None] * len(sike_runs)
+    for i, run in enumerate(sike_runs):
+        densities[i] = run.n_norm
+    sike_runs = [r for _, r in sorted(zip(densities, sike_runs), key=lambda pair: pair[0])]
+
+    return sike_runs

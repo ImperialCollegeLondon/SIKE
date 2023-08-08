@@ -2,6 +2,7 @@ from petsc4py import PETSc
 import petsc4py
 import numpy as np
 import math
+import scipy
 from mpi4py import MPI
 
 
@@ -109,7 +110,8 @@ def solve_np(loc_num_x, min_x, max_x, rate_matrix, n_init, num_x, ksp_solver, ks
     
     # Solve the matrix equation
     for i in range(loc_num_x):
-        n_solved[i] = np.linalg.inv(rate_matrix[i]) @ rhs[i]
+        # n_solved[i] = np.linalg.inv(rate_matrix[i]) @ rhs[i]
+        n_solved[i] = np.linalg.solve(rate_matrix[i], rhs[i])
 
     n_solved = np.array(n_solved)
 
@@ -274,6 +276,11 @@ def evolve_np(loc_num_x, min_x, max_x, rate_matrix, n_init, num_x, dt, num_t, dn
     # Find inverse of operator matrix
     for i in range(loc_num_x):
         be_op_mat[i] = np.linalg.inv(be_op_mat[i])
+    
+    # # Find null space (test)
+    # for i in range(loc_num_x):
+    #     a = scipy.linalg.null_space(rate_matrix[i])
+    #     print(a)
 
     prev_residual = 1e20
     for i in range(num_t):
@@ -281,6 +288,7 @@ def evolve_np(loc_num_x, min_x, max_x, rate_matrix, n_init, num_x, dt, num_t, dn
         # Solve the matrix equation
         for j in range(loc_num_x):
             n_new[j] = be_op_mat[j].dot(n_old[j])
+            # n_new[j] = np.linalg.solve(be_op_mat[j], n_old[j])
 
         # Find dn/dt
         dndt = 0
@@ -299,6 +307,10 @@ def evolve_np(loc_num_x, min_x, max_x, rate_matrix, n_init, num_x, dt, num_t, dn
         if rank == 0:
             max_dndt = max(all_dndts)
         dndt_global = MPI.COMM_WORLD.bcast(max_dndt, root=0)
+
+        # if dndt_global > prev_residual and i/num_t > 0.01:
+        #   print('Finishing time integration because dn/dt has begun to increase.')
+        #   break
 
         prev_residual = dndt_global
         

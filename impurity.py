@@ -5,12 +5,13 @@ from atomic_state import State
 import json
 from mpi4py import MPI
 import math
+import post_processing
 
 class Impurity:
     """Impurity class to hold information on the states and transitions for a given modelled impurity species.
     """
 
-    def __init__(self, rank, size, name, opts, vgrid, Egrid, ne, collrate_const, tbrec_norm, sigma_norm, time_norm, T_norm):
+    def __init__(self, rank, size, name, opts, vgrid, Egrid, ne, Te, collrate_const, tbrec_norm, sigma_norm, time_norm, T_norm, n_norm):
         """Initialise Impurity object.
 
         Args:
@@ -36,7 +37,7 @@ class Impurity:
                               sigma_norm, time_norm, T_norm, opts)
         if rank == 0:    
             print(' Initialising densities...')
-        self.init_dens(opts, ne)
+        self.init_dens(opts, ne, n_norm, Te, T_norm)
         if rank == 0:
             print(' Finalising states...')
         self.set_state_positions()
@@ -264,7 +265,7 @@ class Impurity:
                 self.transitions[i] = None
         self.transitions = [t for t in self.transitions if t is not None]
 
-    def init_dens(self, opts, ne):
+    def init_dens(self, opts, ne, n_norm, Te, T_norm):
         """Initialise densities of impurity states
 
         Args:
@@ -277,17 +278,50 @@ class Impurity:
         if opts['maxwellian_electrons']:
             self.dens_Max = np.zeros((len(ne), self.tot_states))
 
-        if opts['fixed_fraction_init']:
-            if opts['kinetic_electrons']:
-                self.dens[:, 0] = opts['frac_imp_dens'] * ne
-            if opts['maxwellian_electrons']:
-                self.dens_Max[:, 0] = opts['frac_imp_dens'] * ne
-        else:
-            if opts['kinetic_electrons']:
-                self.dens[:, 0] = 1.0
-            if opts['maxwellian_electrons']:
-                self.dens_Max[:, 0] = 1.0
+        if opts['saha_boltzmann_init']:
 
+          self.set_state_positions()
+          
+          Z_dens = np.zeros([len(ne),self.num_Z])
+          for i in range(len(ne)):
+              Z_dens[i,:] = SIKE_tools.saha_dist(Te[i]*T_norm, ne[i]*n_norm, n_norm, self) / n_norm
+          
+          for Z in range(self.num_Z):
+              
+              Z_states = post_processing.gather_states(self.states,Z)
+              
+              energies = [s.energy for s in Z_states]
+              stat_weights = [s.stat_weight for s in Z_states]
+              locs = [s.pos for s in Z_states]
+              for i in range(len(ne)):
+                
+                Z_dens_loc = Z_dens[i,Z]
+                
+                rel_dens = SIKE_tools.boltzmann_dist(Te[i] * T_norm,energies,stat_weights,gnormalise=False)
+                
+                if opts['kinetic_electrons']:
+                  self.dens[i,locs] = rel_dens * Z_dens_loc / np.sum(rel_dens)
+                  if opts['fixed_fraction_init']:
+                    self.dens[i,locs] *= opts['frac_imp_dens'] * ne[i]
+                if opts['maxwellian_electrons']:
+                  self.dens_Max[i,locs] = rel_dens * Z_dens_loc / np.sum(rel_dens)
+                  if opts['fixed_fraction_init']:
+                    self.dens_Max[i,locs] *= opts['frac_imp_dens'] * ne[i]
+        else:
+            
+            if opts['fixed_fraction_init']:
+              if opts['kinetic_electrons']:
+                  self.dens[:, 0] = opts['frac_imp_dens'] * ne
+              if opts['maxwellian_electrons']:
+                  self.dens_Max[:, 0] = opts['frac_imp_dens'] * ne
+           
+            else:
+              if opts['kinetic_electrons']:
+                  self.dens[:, 0] = 1.0
+              if opts['maxwellian_electrons']:
+                  self.dens_Max[:, 0] = 1.0
+
+        
     def set_state_positions(self):
         """Store the positions of each state (which may be different from the state ID)
         """

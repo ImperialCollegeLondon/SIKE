@@ -6,7 +6,7 @@ import json
 from mpi4py import MPI
 import math
 import post_processing
-
+from scipy import interpolate
 class Impurity:
     """Impurity class to hold information on the states and transitions for a given modelled impurity species.
     """
@@ -82,8 +82,12 @@ class Impurity:
             levels_f = os.path.join(os.path.dirname(__file__), 'atom_data', self.longname,
                                     self.name + '_levels_nlj.json')
         else:
+          if opts['resolve_l']:
             levels_f = os.path.join(os.path.dirname(__file__), 'atom_data', self.longname,
                                     self.name + '_levels_nl.json')
+          else:
+            levels_f = os.path.join(os.path.dirname(__file__), 'atom_data', self.longname,
+                                    self.name + '_levels_n.json')
         with open(levels_f) as f:
             levels_dict = json.load(f)
             self.states = [None] * len(levels_dict)
@@ -105,14 +109,18 @@ class Impurity:
         """Set the ground state levels, ionization energies, delta E from ground state for each atomic state
         """
 
-        # Find the lowest energy states
-        gs_energies = 1e9 * np.ones(self.num_Z)
+        # Find the lowest energy states        
+        gs_energies = np.zeros(self.num_Z)
         gs_pos = np.zeros(self.num_Z, dtype=int)
         for Z in range(self.num_Z):
-            for i, s in enumerate(self.states):
-                if s.Z == Z and s.energy < gs_energies[Z]:
-                    gs_energies[Z] = s.energy
-                    gs_pos[Z] = i
+          Z_states = [s for s in self.states if s.Z == Z]
+          energies = [s.energy for s in Z_states]
+          gs = Z_states[np.argmin(energies)]
+          for i,s in enumerate(self.states):
+            if s.equals(gs):
+              gs_pos[Z] = i
+              gs_energies[Z] = gs.energy
+              break
 
         # Mark ground states and calculate ionization energy
         for i in range(len(self.states)):
@@ -150,8 +158,12 @@ class Impurity:
             trans_f = os.path.join(os.path.dirname(__file__), 'atom_data', self.longname,
                                    self.name + '_transitions_nlj.json')
         else:
+          if opts['resolve_l']:
             trans_f = os.path.join(os.path.dirname(__file__), 'atom_data', self.longname,
                                    self.name + '_transitions_nl.json')
+          else:
+            trans_f = os.path.join(os.path.dirname(__file__), 'atom_data', self.longname,
+                                   self.name + '_transitions_n.json')
         if rank == 0:
             print('  Loading transitions from json...')
         with open(trans_f) as f:
@@ -251,6 +263,7 @@ class Impurity:
         #     print('  {:.1f}%'.format(100), end='\r')
 
         # Remove states above ionization energy if no autoionization
+        # TODO: Is this necessary?
         if autoionization is False:
             for i, state in enumerate(self.states):
                 if state.iz_energy < 0:

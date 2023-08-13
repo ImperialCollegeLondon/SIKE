@@ -16,6 +16,7 @@ default_opts = {'modelled_impurities': ['Li'],
                 'dndt_thresh': 1e-5,
                 'max_steps': 1000,
                 'frac_imp_dens': 0.05,
+                'resolve_l': True,
                 'resolve_j': True,
                 'ionization': True,
                 'radiative recombination': True,
@@ -365,7 +366,7 @@ class SIKERun(object):
                                                 self.n_norm, self.t_norm, self.opts['ksp_solver'], self.opts['ksp_pc'], 
                                                 self.opts['ksp_tol'])
                     else:
-                        n_solved = solver.evolve_np(self.loc_num_x, self.min_x, self.max_x,self.rate_mats[el], 
+                        n_solved = solver.evolve_np(self.loc_num_x, self.min_x, self.   max_x,self.rate_mats[el], 
                                                 self.impurities[el].dens, self.num_x, dt, num_t, self.opts['dndt_thresh'],
                                                 self.n_norm, self.t_norm, self.opts['ksp_solver'], self.opts['ksp_pc'], 
                                                 self.opts['ksp_tol'])

@@ -276,12 +276,6 @@ def evolve_np(loc_num_x, min_x, max_x, rate_matrix, n_init, num_x, dt, num_t, dn
     # Find inverse of operator matrix
     for i in range(loc_num_x):
         be_op_mat[i] = np.linalg.inv(be_op_mat[i])
-    
-    # # Find null space (test)
-    # for i in range(loc_num_x):
-    #     a = scipy.linalg.null_space(rate_matrix[i])
-    #     print(a)
-
     prev_residual = 1e20
     for i in range(num_t):
         

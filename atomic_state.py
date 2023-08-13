@@ -15,7 +15,10 @@ class State:
             self.config_full = dict['config_full']
         self.energy = dict['energy']
         self.n = dict['n']
-        self.l = dict['l']
+        if 'l' in dict.keys():
+          self.l = dict['l']
+        else:
+          self.l = None
         if 'j' in dict.keys():
             self.j = dict['j']
         else:

@@ -138,6 +138,7 @@ def saha_dist(Te,ne,imp_dens_tot,impurity):
     planck_h = 6.62607004e-34
 
     ground_states = [s for s in impurity.states if s.ground is True]
+    ground_states = list(reversed(sorted(ground_states,key=lambda x: x.num_el)))
 
     de_broglie_l = np.sqrt(
             (planck_h ** 2) / (2 * np.pi * el_mass * el_charge * Te))

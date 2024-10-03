@@ -1,4 +1,4 @@
->[!NOTE]
+>[!Warning]
 >This repository is now obsolete. Please use https://github.com/plasdom/sike instead.
 
 # SIKE
